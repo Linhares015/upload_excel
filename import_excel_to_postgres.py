@@ -1,74 +1,99 @@
+#desenvolvido por Tiago Linhares
+
 import os
 import pandas as pd
-import psycopg2
-from psycopg2.extensions import AsIs
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
+from sqlalchemy import create_engine
 
-# Função para mapear tipos de dados do pandas para tipos de dados do PostgreSQL
-def map_data_types(dtype):
-    if pd.api.types.is_integer_dtype(dtype):
-        return "INTEGER"
-    elif pd.api.types.is_float_dtype(dtype):
-        return "REAL"
-    elif pd.api.types.is_datetime64_any_dtype(dtype):
-        return "TIMESTAMP"
-    else:
-        return "TEXT"
 
-# Carregar as variáveis de ambiente do arquivo .env
+# Função para mapear tipos de dados do pandas para tipos em sql
+# Modifique a função map_data_types para retornar sempre "TEXT"
+def map_data_types(pd_type):
+    return "TEXT"
+
+
+# Carregar as variaveis de ambiente do arquivo .Env
 load_dotenv()
 
+
 # Solicitar os argumentos interativamente
-excel_file = input('Digite o caminho do arquivo Excel a ser importado: ')
-db_host = input('Digite o host do banco de dados PostgreSQL (padrão: ' + os.getenv('DB_HOST') + '): ') or os.getenv('DB_HOST')
-db_name = input('Digite o nome do banco de dados PostgreSQL (padrão: ' + os.getenv('DB_NAME') + '): ') or os.getenv('DB_NAME')
-db_user = input('Digite o nome do usuário do banco de dados PostgreSQL (padrão: ' + os.getenv('DB_USER') + '): ') or os.getenv('DB_USER')
-db_password = input('Digite a senha do usuário do banco de dados PostgreSQL (padrão: ' + os.getenv('DB_PASSWORD') + '): ') or os.getenv('DB_PASSWORD')
-table_name = input('Digite o nome da tabela a ser criada no banco de dados: ')
-file_type = input('Digite o tipo de arquivo Excel (xls ou xlsx, padrão: xlsx): ') or 'xlsx'
+db_choice = input("Escolha o banco de dados (postgres, mysql, sqlserver, bigquery): ").lower()
 
-create_table = input('Deseja criar uma nova tabela no banco de dados, se não existir? (s/n): ').lower() == 's'
-truncate_table = input('Deseja truncar a tabela antes de inserir os novos dados? (s/n): ').lower() == 's'
-append = input('Deseja adicionar dados à tabela existente? (s/n): ').lower() == 's'
+if db_choice not in ["postgres", "mysql", "sqlserver", "bigquery"]:
+    print("Opção inválida. Escolha entre 'postgres', 'mysql', 'sqlserver' e 'bigquery'.")
+    exit(1)
 
-# Ler os dados do arquivo Excel usando a biblioteca pandas
+db_url = os.getenv(f'{db_choice.upper()}_URL')
+
+if not db_url:
+    print(f"As informações de conexão para {db_choice} não foram encontradas. Por favor, insira os detalhes de conexão:")
+
+    host = input("Informe o host do banco de dados: ")
+    port = input("Informe a porta do banco de dados: ")
+    db_name = input("Informe o nome do banco de dados: ")
+    user = input("Informe o nome de usuário do banco de dados: ")
+    password = input("Informe a senha do usuário do banco de dados: ")
+
+    if db_choice == "postgres":
+        db_url = f"postgresql://{user}:{password}@{host}:{port}/{db_name}"
+    elif db_choice == "mysql":
+        db_url = f"mysql+mysqlconnector://{user}:{password}@{host}:{port}/{db_name}"
+    elif db_choice == "sqlserver":
+        db_url = f"mssql+pyodbc://{user}:{password}@{host}:{port}/{db_name}?driver=ODBC+Driver+17+for+SQL+Server"
+    else:  # db_choice == "bigquery":
+        db_url = f"bigquery://{db_name}"
+
+    save_credentials = input("Deseja salvar essas informações de conexão? (s/n): ").lower()
+    if save_credentials == "s":
+        set_key(".env", f"{db_choice.upper()}_URL", db_url)
+        print("As informações de conexão foram salvas.")
+
+
+
+# Ler dados do arquivo excel usando a biblioteca pandas
+excel_file = input("Informe o caminho do arquivo excel a ser importado: ")
+file_type = input("Informe o tipo de arquivo excel (xls ou xlsx): ")
+
+
+
 if file_type == 'xls':
     excel_data = pd.read_excel(excel_file, engine='xlrd')
 else:
     excel_data = pd.read_excel(excel_file)
 
-# Conectar ao banco de dados PostgreSQL
-conn = psycopg2.connect(
-    host=db_host,
-    database=db_name,
-    user=db_user,
-    password=db_password
-)
 
-c = conn.cursor()
+schema = input("Informe o schema onde a tabela será criada: ")
 
-if create_table:
-    # Identificar os nomes das colunas e os tipos de dados
-    column_names = excel_data.columns
-    column_types = [map_data_types(dtype) for dtype in excel_data.dtypes]
 
-    # Criar a tabela no banco de dados (caso ela ainda não exista)
-    columns_str = ', '.join([f'{column_name} {column_type}' for column_name, column_type in zip(column_names, column_types)])
-    create_table_query = f'''CREATE TABLE IF NOT EXISTS {table_name} ({columns_str});'''
-    c.execute(create_table_query)
+table_name = input("Informe o nome da tabela a ser criada ou usada no banco de dados: ")
 
-if truncate_table:
-    # Truncar a tabela antes de inserir os novos dados
-    c.execute(f'''TRUNCATE TABLE {table_name};''')
+
+# Altere a criação da tabela de acordo com os tipos de dados do pandas
+column_defs = [f"{col} {map_data_types(excel_data[col].dtype)}" for col in excel_data.columns]
+create_table_query = f"CREATE TABLE IF NOT EXISTS {schema}.{table_name} ({', '.join(column_defs)})"
+
+
+# Conectar ao banco de dados usando SQLAlchemy
+engine = create_engine(db_url)
+
+
+table_action = input("Escolha a ação para a tabela(estará entre parenteses): criar tabela do zero(nova), apagar dados da existente e substituir(truncar) ou adicionar dados em uma existente(adicionar)")
+
+
+if table_action not in ["nova", "truncar", "adicionar"]:
+    print("Opção inválida. Escolha nova, truncar ou adicionar")
+    exit(1)
+
+
+with engine.connect() as connection:
+    if table_action == "nova":
+        if_exists = 'replace'
+    elif table_action == "truncar":
+        connection.execute(f"TRUNCATE TABLE {table_name}")
+        if_exists = 'append'
+    else: # table_action == "adicionar"
+        if_exists = 'append'
+
 
 # Inserir os dados na tabela do banco de dados
-column_names_str = ', '.join(column_names)
-placeholders = ', '.join(['%s' for _ in column_names])
-
-for row in excel_data.itertuples(index=False):
-    c.execute(f'''INSERT INTO {table_name} ({column_names_str})
-                VALUES ({placeholders})''', row)
-
-# Salvar as mudanças no banco de dados e fechar a conexão
-conn.commit()
-conn.close()
+excel_data.to_sql(table_name, engine, schema=schema, if_exists=if_exists, index=False)
