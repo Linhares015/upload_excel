@@ -1,21 +1,23 @@
 #!/bin/bash
 
-# Verificar se Python está instalado
-if ! command -v python3 &> /dev/null; then
-    echo "Python3 não está instalado. Por favor, instale o Python3 e tente novamente."
-    echo "Visite https://www.python.org/downloads/ para obter instruções de instalação."
-    exit 1
-fi
+cat << "EOF"
 
-# Verificar se pip está instalado
-if ! command -v pip &> /dev/null; then
-    echo "pip não está instalado. Por favor, instale o pip e tente novamente."
-    echo "Visite https://pip.pypa.io/en/stable/installation/ para obter instruções de instalação."
-    exit 1
-fi
+ ____          _____ _                   
+| __ ) _   _  |_   _(_) __ _  __ _  ___  
+|  _ \| | | |   | | | |/ _` |/ _` |/ _ \ 
+| |_) | |_| |   | | | | (_| | (_| | (_) |
+|____/ \__, |   |_| |_|\__,_|\__, |\___/ 
+       |___/                 |___/       
+ _     _       _                         
+| |   (_)_ __ | |__   __ _ _ __ ___  ___ 
+| |   | | '_ \| '_ \ / _` | '__/ _ \/ __|
+| |___| | | | | | | | (_| | | |  __/\__ \
+|_____|_|_| |_|_| |_|\__,_|_|  \___||___/
+                                         
 
-# Instalar dependências
-pip install --user pandas psycopg2-binary python-dotenv
+EOF
 
-# Executar o programa
-python3 import_excel_to_postgres.py
+source vm_py/bin/activate
+python import_excel_to_postgres.py
+deactivate
+
